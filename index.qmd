@@ -253,15 +253,284 @@ plt.show()
 
 ### Questions to Answer for 75% Grade on Challenge
 
-1. **Bivariate Regression Analysis with StressSurvey:** Run a bivariate regression of Anxiety on StressSurvey. What are the estimated coefficients? How do they compare to the true relationship?
+## Question 1 — Bivariate Regression Analysis with StressSurvey
 
-2. **Visualization of Bivariate Relationship:** Create a scatter plot with the regression line showing the relationship between StressSurvey and Anxiety. Comment on the fit and any potential issues.
+**Answer — Bivariate regression of Anxiety on StressSurvey**
 
-3. **Bivariate Regression Analysis with Time:** Run a bivariate regression of Anxiety on Time. What are the estimated coefficients? How do they compare to the true relationship?
+- Model estimated: Anxiety = β0 + β1 × StressSurvey + ε
+- Using the provided `observDF` (15 observations), the OLS estimates (exact values computed from the data) are:
+  - Intercept (β0) = -1.5240
+  - Slope (β1) = 1.0470
 
-4. **Visualization of Bivariate Relationship:** Create a scatter plot with the regression line showing the relationship between Time and Anxiety. Comment on the fit and any potential issues.
+**Model diagnostics and inference (from the OLS table):**
 
-5. **Multiple Regression Analysis:** Run a multiple regression of Anxiety on both **StressSurvey** and Time. What are the estimated coefficients? How do they compare to the true relationship?
+- R-squared = 0.9011 (the model explains ~90.1% of the variance in Anxiety)
+- Intercept std err = 0.707, t = -2.156, p ≈ 0.050
+- Slope std err = 0.096, t = 10.883, p ≈ 6.68e-08 (highly significant)
+
+**Interpretation and comparison to the true relationship:**
+
+- The data-generating equation is: Anxiety = 1 × Stress + 0.1 × Time. The true coefficient on Stress is 1 and on Time is 0.1.
+- This bivariate regression uses `StressSurvey` (a survey proxy) rather than the true `Stress` measurement. The estimated slope (~1.047) describes the change in Anxiety for a one-unit increase in the *survey* score, not for a one-unit change in true Stress.
+- Because `StressSurvey` is a non-linear proxy for `Stress` and the variable `Time` is omitted from this bivariate model, the OLS slope does not recover the underlying causal parameter for Stress (β1 = 1) in a clean way. The coefficient is informative about association with the survey score, but it is not a causal estimate of the effect of true Stress.
+- The high R-squared and very small p-value on the slope can be misleading: they suggest a strong, statistically significant relationship, yet the coefficient conflates measurement non-linearity and omitted-variable influence (Time). This is exactly the cautionary example the challenge highlights.
+
+**Recommended short conclusion:**
+
+- The naive bivariate regression of Anxiety on `StressSurvey` produces a seemingly precise slope estimate (≈1.047) and a high R-squared, but this is an association between Anxiety and the survey proxy. It should not be interpreted as recovering the true causal coefficient on Stress without further analysis (multiple regression with the true `Stress`, diagnostic plots, or sample-splitting).
+
+```{python}
+#| echo: false
+#| include: true
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Re-use observDF if present; otherwise recreate it (safe fallback when executing this chunk standalone)
+try:
+  observDF
+except NameError:
+  import pandas as pd
+  observDF = pd.DataFrame({
+    'Stress': [0, 0, 0, 1, 1, 1, 2, 2, 2, 8, 8, 8, 12, 12, 12],
+    'StressSurvey': [0, 0, 0, 3, 3, 3, 6, 6, 6, 9, 9, 9, 12, 12, 12],
+    'Time': [0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2.1, 2.2, 2.2, 2.2],
+    'Anxiety': [0, 0.1, 0.1, 1.1, 1.1, 1.1, 2.2, 2.2, 2.2, 8.2, 8.2, 8.21, 12.22, 12.22, 12.22]
+  })
+
+X = sm.add_constant(observDF['StressSurvey'])
+y = observDF['Anxiety']
+model = sm.OLS(y, X).fit()
+
+print(model.summary())
+
+# Scatter plot with fitted line
+sns.set_style('whitegrid')
+fig, ax = plt.subplots(figsize=(7, 4))
+sns.scatterplot(x='StressSurvey', y='Anxiety', data=observDF, s=80, color='purple', ax=ax)
+xs = np.linspace(observDF['StressSurvey'].min(), observDF['StressSurvey'].max(), 100)
+ys = model.params['const'] + model.params['StressSurvey'] * xs
+ax.plot(xs, ys, color='red', linewidth=2)
+ax.set_xlabel('StressSurvey (survey proxy)')
+ax.set_ylabel('Anxiety')
+ax.set_title('Bivariate regression: Anxiety on StressSurvey')
+ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+```
+
+
+## Question 2 — Visualization of Anxiety vs StressSurvey
+
+**Goal:** Show the bivariate pattern between the proxy `StressSurvey` (x-axis) and `Anxiety` (y-axis), overlay the fitted linear regression line, and diagnose potential issues with interpreting the apparent fit.
+
+**Plot & Fit Observations:**
+
+- The points fall in five tight vertical clusters at survey values {0, 3, 6, 9, 12}. This discretization (survey coarseness) artificially strengthens the visual impression of linearity because there is no within-cluster horizontal variation.
+- A single straight line passes visually close to the cluster centers and produces a high R-squared (~0.90) and a highly significant slope.
+- However, the *jump* between 6 → 9 is disproportionately large because underlying true Stress jumps from 2 → 8 at that stage; the line’s slope is partly driven by this leverage-like gap rather than a smooth linear mapping of stress.
+- The negative intercept (≈ -1.52) is outside the observable range (we never see negative Anxiety). This indicates extrapolation at low survey scores is unstable.
+- Residual structure: within each cluster, residuals are near zero (design artifact), while between clusters the spacing is uneven (small differences 0→3→6 then a large gap 6→9 then moderate 9→12). This non-uniform spacing hints at a *piecewise* or *non-linear proxy transformation* rather than a single homogeneous linear effect.
+- Omitted variable `Time` still contributes 0.1 × Time to Anxiety. Because Time is mildly correlated with Stress (and thereby with StressSurvey), its effect is partially absorbed into the slope, inflating interpretability risk.
+
+**Key Interpretation Risks:**
+1. **Proxy Non-Linearity:** `StressSurvey` is monotonic but not linearly proportional to true Stress, so the fitted line’s slope is not the causal Stress effect.
+2. **Discrete X Values:** Clustering hides potential curvature; with more granular survey scaling we might see local departures from linear trend.
+3. **Leverage Gap:** The 6→9 jump acts like a leverage segment amplifying slope stability metrics (t-stat) while masking non-linearity.
+4. **Omitted Variable Influence:** Time’s true effect (0.1 × Time) is pooled into the StressSurvey slope in this bivariate specification.
+5. **Misleading Goodness-of-Fit:** High R-squared here is partly mechanical (few distinct x-values) and shouldn’t be over-weighted in causal interpretation.
+
+**Concise Conclusion:** The plot “looks” linear and strong, but its visual neatness is an artifact of discretized proxy measurement plus omitted variable absorption. The high R-squared and significant slope can mislead stakeholders into overconfident causal claims about survey-measured stress and anxiety.
+
+```{python}
+#| label: fig-stressSurvey-anxiety
+#| fig-cap: "Scatter of Anxiety vs StressSurvey with fitted OLS line (clusters reveal discretized proxy)."
+#| echo: false
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+try:
+  observDF
+except NameError:
+  import pandas as pd
+  observDF = pd.DataFrame({
+    'Stress': [0, 0, 0, 1, 1, 1, 2, 2, 2, 8, 8, 8, 12, 12, 12],
+    'StressSurvey': [0, 0, 0, 3, 3, 3, 6, 6, 6, 9, 9, 9, 12, 12, 12],
+    'Time': [0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2.1, 2.2, 2.2, 2.2],
+    'Anxiety': [0, 0.1, 0.1, 1.1, 1.1, 1.1, 2.2, 2.2, 2.2, 8.2, 8.2, 8.21, 12.22, 12.22, 12.22]
+  })
+
+X = sm.add_constant(observDF['StressSurvey'])
+model_q2 = sm.OLS(observDF['Anxiety'], X).fit()
+
+sns.set_style('whitegrid')
+fig, ax = plt.subplots(figsize=(7,4))
+ax.scatter(observDF['StressSurvey'], observDF['Anxiety'], color='purple', s=80)
+grid_x = np.linspace(observDF['StressSurvey'].min(), observDF['StressSurvey'].max(), 100)
+pred_y = model_q2.params['const'] + model_q2.params['StressSurvey'] * grid_x
+ax.plot(grid_x, pred_y, color='red', linewidth=2, label='OLS fit')
+ax.set_xlabel('StressSurvey (proxy for Stress)')
+ax.set_ylabel('Anxiety')
+ax.set_title('Anxiety vs StressSurvey with Fitted Line')
+ax.legend()
+ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# (Optional) Print compact metrics (suppressed from HTML figure caption)
+print({'intercept': round(model_q2.params['const'],4),
+     'slope': round(model_q2.params['StressSurvey'],4),
+     'R2': round(model_q2.rsquared,4)})
+```
+
+
+## Question 3 — Bivariate Regression Analysis with Time
+
+**Answer — Bivariate regression of Anxiety on Time**
+
+- Model estimated: Anxiety = β0 + β1 × Time + ε
+- OLS estimates from the provided data (15 rows):
+  - Intercept (β0) = -3.6801
+  - Slope (β1) = 5.3406
+- Inference and fit:
+  - R-squared = 0.5630
+  - Slope t = 4.093, p ≈ 0.00127 (significant)
+  - Intercept t = -1.648, p ≈ 0.123 (not significant)
+
+**Comparison to the true relationship:**
+
+- The true data-generating equation is Anxiety = Stress + 0.1 × Time, so the true coefficient on Time is 0.1.
+- The bivariate slope of ≈5.34 is wildly larger than 0.1. This is classic omitted-variable bias: `Stress` is omitted, yet it explains the vast majority of Anxiety and is correlated with Time in this synthetic design (as Stress increases across clusters, Time nudges upward). As a result, the Time slope absorbs Stress’s effect, producing a severely inflated estimate.
+- The negative intercept (≈ -3.68) and only moderate R² (≈0.56) also signal that a single-predictor linear model is not capturing the true structure.
+
+**Conclusion:** Interpreting the bivariate coefficient on Time as a causal effect would be profoundly misleading. It reflects both Time’s small true effect (0.1) and the co-movement of Time with Stress, which has a large true effect (1.0).
+
+```{python}
+#| echo: false
+#| include: true
+import statsmodels.api as sm
+import pandas as pd
+
+try:
+    observDF
+except NameError:
+    observDF = pd.DataFrame({
+        'Stress': [0, 0, 0, 1, 1, 1, 2, 2, 2, 8, 8, 8, 12, 12, 12],
+        'StressSurvey': [0, 0, 0, 3, 3, 3, 6, 6, 6, 9, 9, 9, 12, 12, 12],
+        'Time': [0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2.1, 2.2, 2.2, 2.2],
+        'Anxiety': [0, 0.1, 0.1, 1.1, 1.1, 1.1, 2.2, 2.2, 2.2, 8.2, 8.2, 8.21, 12.22, 12.22, 12.22]
+    })
+
+X = sm.add_constant(observDF['Time'])
+model_q3 = sm.OLS(observDF['Anxiety'], X).fit()
+print(model_q3.summary())
+```
+
+## Question 4 — Visualization of Anxiety vs Time
+
+**Goal:** Visualize Anxiety (y) against Time (x), overlay the bivariate OLS fit, and diagnose how omitted Stress distorts interpretation.
+
+**Plot & Fit Observations:**
+
+- Points form several nearly vertical stacks because Time changes only slightly within each Stress level, while Anxiety jumps by entire Stress units. This yields tall vertical separations at similar Time values.
+- The fitted line is steep (slope ≈ 5.34) because small increases in Time coincide with large increases in Anxiety driven by higher Stress. The model attributes that co-movement to Time, inflating the slope.
+- Intercept is negative and outside the realistic Anxiety range, suggesting extrapolation problems at low Time.
+- Moderate R² (~0.56) despite a visually steep fit reflects that most variation in Anxiety is actually due to Stress, not Time.
+- Visual takeaway: a bivariate line through vertically separated clusters is not evidence that Time has a large causal effect; it’s evidence that Time and Stress are not disentangled in this specification.
+
+**Concise Conclusion:** The plot is a textbook picture of omitted-variable bias. Without controlling for Stress, the Time–Anxiety line overstates Time’s effect and misleads causal interpretation.
+
+```{python}
+#| label: fig-time-anxiety
+#| fig-cap: "Scatter of Anxiety vs Time with fitted OLS line (vertical banding reveals omitted Stress)."
+#| echo: false
+import numpy as np
+import statsmodels.api as sm
+import matplotlib.pyplot as plt
+import seaborn as sns
+import pandas as pd
+
+try:
+  observDF
+except NameError:
+  observDF = pd.DataFrame({
+    'Stress': [0, 0, 0, 1, 1, 1, 2, 2, 2, 8, 8, 8, 12, 12, 12],
+    'StressSurvey': [0, 0, 0, 3, 3, 3, 6, 6, 6, 9, 9, 9, 12, 12, 12],
+    'Time': [0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2.1, 2.2, 2.2, 2.2],
+    'Anxiety': [0, 0.1, 0.1, 1.1, 1.1, 1.1, 2.2, 2.2, 2.2, 8.2, 8.2, 8.21, 12.22, 12.22, 12.22]
+  })
+
+# Fit bivariate model for overlay
+X = sm.add_constant(observDF['Time'])
+model_q4 = sm.OLS(observDF['Anxiety'], X).fit()
+
+sns.set_style('whitegrid')
+fig, ax = plt.subplots(figsize=(7,4))
+ax.scatter(observDF['Time'], observDF['Anxiety'], color='teal', s=80)
+grid_x = np.linspace(observDF['Time'].min(), observDF['Time'].max(), 100)
+pred_y = model_q4.params['const'] + model_q4.params['Time'] * grid_x
+ax.plot(grid_x, pred_y, color='red', linewidth=2, label='OLS fit')
+ax.set_xlabel('Time (minutes on social media, last 24 hrs)')
+ax.set_ylabel('Anxiety')
+ax.set_title('Anxiety vs Time with Fitted Line')
+ax.legend()
+ax.grid(alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# (Optional) Compact metrics
+print({'intercept': round(model_q4.params['const'],4),
+     'slope': round(model_q4.params['Time'],4),
+     'R2': round(model_q4.rsquared,4)})
+```
+
+## Question 5 — Multiple Regression: Anxiety on StressSurvey + Time
+
+**Model:** Anxiety = β0 + β1 × StressSurvey + β2 × Time + ε
+
+**Expectation from data-generating process:** True coefficients are β0 = 0, βStress = 1, βTime = 0.1. Because the model substitutes StressSurvey (a proxy) for true Stress, we expect distortions even in a multivariate setting.
+
+**Estimated OLS coefficients (n = 15):**
+
+| Term | Estimate | Std. Err | t | p-value | Comparison to Truth |
+|------|----------|----------|---|---------|----------------------|
+| Intercept | 0.589 | 1.034 | 0.569 | 0.580 | True intercept = 0 (estimate is imprecise but near zero) |
+| StressSurvey | 1.427 | 0.172 | 8.287 | 2.62e-06 | True Stress coefficient = 1 → proxy inflates effect because survey scaling is non-linear |
+| Time | -2.780 | 1.111 | -2.502 | 0.0278 | True Time coefficient = 0.1 → estimate flips sign and magnitude due to proxy/collinearity |
+
+Model fit metrics: R² = 0.935, Adjusted R² = 0.924, F-statistic p-value ≈ 7.5e-08. Although the model explains >93% of variance, its coefficients are far from the true structural values.
+
+**Key Interpretability Problems:**
+
+1. **Proxy Non-Linearity:** StressSurvey compresses lower stress values and exaggerates higher ones, inflating β1 above the true Stress effect (1.0). The model interprets survey increments as larger jumps in true Stress than they are.
+2. **Coefficient Competition / Suppression:** Because StressSurvey imperfectly captures Stress, the residual Stress variation that co-moves with Time causes β2 to swing negative. The model “attributes” Anxiety reductions to higher Time once survey-measured stress is held constant, even though the true Time effect is +0.1.
+3. **False Sense of Security from Fit:** High R² and significant t-stats suggest a great model, yet the estimates tell the wrong causal story (wrong magnitude and even direction for Time). Statistical significance does not rescue a misspecified proxy.
+4. **Small Sample Sensitivity:** With only 15 observations and collinearity between StressSurvey and Time, small measurement errors in the proxy can drastically shift β2.
+
+**Concise Conclusion:** Multiple regression with the survey proxy plus Time appears statistically strong but completely misrepresents the true causal relationship: it overstates the stress effect and reverses the sign on Time. This demonstrates why relying on proxies and high R² alone can lead analysts to confidently report incorrect conclusions.
+
+```{python}
+#| echo: false
+#| include: true
+import statsmodels.api as sm
+import pandas as pd
+try:
+  observDF
+except NameError:
+  observDF = pd.DataFrame({
+    'Stress': [0,0,0,1,1,1,2,2,2,8,8,8,12,12,12],
+    'StressSurvey': [0,0,0,3,3,3,6,6,6,9,9,9,12,12,12],
+    'Time': [0,1,1,1,1,1,2,2,2,2,2,2.1,2.2,2.2,2.2],
+    'Anxiety': [0,0.1,0.1,1.1,1.1,1.1,2.2,2.2,2.2,8.2,8.2,8.21,12.22,12.22,12.22]
+  })
+X = sm.add_constant(observDF[['StressSurvey','Time']])
+model_q5 = sm.OLS(observDF['Anxiety'], X).fit()
+print(model_q5.summary())
+print({'R2': round(model_q5.rsquared,4), 'AdjR2': round(model_q5.rsquared_adj,4)})
+```
 
 ::: {.callout-tip}
 ## 🎯 Remember the True Coefficients!
@@ -283,17 +552,129 @@ When analyzing your multiple regression results, compare them to the **true rela
 
 ### Questions to Answer for 85% Grade on Challenge
 
-6. **Multiple Regression Analysis:** Run a multiple regression of Anxiety on both **Stress** and Time. What are the estimated coefficients? How do they compare to the true relationship?
+## Question 6 — Multiple Regression: Anxiety on Stress + Time
 
-7. **Model Comparison:** Compare the R-squared values and coefficient interpretations between the two multiple regression models. Do both models show statistical significance in all of their coefficient estimates? What does this tell you about the real-world implications of multiple regression results?
+**Model:** Anxiety = β0 + β1 × Stress + β2 × Time + ε
+
+**Estimated OLS coefficients (n = 15):**
+
+| Term | Estimate | Std. Err | t | p-value | Comparison to Truth |
+|------|----------|----------|---|---------|----------------------|
+| Intercept | ~ 0.0 | 2.44e-15 | -1.538 | 0.150 | True intercept = 0 → essentially zero (within numerical precision) |
+| Stress | 1.0000 | 2.75e-16 | 3.63e+15 | ~0 | Matches true βStress = 1 |
+| Time | 0.1000 | 1.94e-15 | 5.16e+13 | ~0 | Matches true βTime = 0.1 |
+
+Model fit metrics: R² = 1.000, Adjusted R² = 1.000.
+
+**Interpretation:** With the correctly measured Stress variable included alongside Time, the model perfectly recovers the true structural coefficients by construction of the dataset. This provides a clean benchmark to contrast against models that use the survey proxy.
+
+```{python}
+#| echo: false
+#| include: true
+import statsmodels.api as sm
+import pandas as pd
+try:
+  observDF
+except NameError:
+  observDF = pd.DataFrame({
+    'Stress': [0,0,0,1,1,1,2,2,2,8,8,8,12,12,12],
+    'StressSurvey': [0,0,0,3,3,3,6,6,6,9,9,9,12,12,12],
+    'Time': [0,1,1,1,1,1,2,2,2,2,2,2.1,2.2,2.2,2.2],
+    'Anxiety': [0,0.1,0.1,1.1,1.1,1.1,2.2,2.2,2.2,8.2,8.2,8.21,12.22,12.22,12.22]
+  })
+X = sm.add_constant(observDF[['Stress','Time']])
+model_q6 = sm.OLS(observDF['Anxiety'], X).fit()
+print(model_q6.summary())
+```
+
+## Question 7 — Model Comparison (Proxy vs. True Stress)
+
+**Models compared:**
+
+- Model A (Q5): Anxiety ~ StressSurvey + Time → R² = 0.935, Adj R² = 0.924
+  - βStressSurvey ≈ 1.427 (p ≈ 2.6e-06)
+  - βTime ≈ -2.780 (p ≈ 0.028)
+
+- Model B (Q6): Anxiety ~ Stress + Time → R² = 1.000, Adj R² = 1.000
+  - βStress = 1.000 (p ≈ 0)
+  - βTime = 0.100 (p ≈ 0)
+
+**Findings:**
+
+1. **Fit vs. Truth:** Model A has a very high R² but still tells the wrong causal story (inflated stress effect, negative time effect). Model B recovers the exact true coefficients. High R² alone is not a guarantee of correct interpretation.
+2. **Significance ≠ Correctness:** Model A yields statistically significant coefficients—even for the wrong sign on Time. Statistical significance can coexist with interpretive error when proxies or functional forms are misspecified.
+3. **Proxy Hazard:** Substituting StressSurvey for true Stress distorts both magnitudes and directions. The proxy’s non-linear scaling and collinearity with Time create suppression effects that flip βTime negative.
+4. **Real-World Implication:** Analysts and decision-makers could be persuaded by Model A’s strong-looking metrics and p-values, leading to incorrect conclusions about social media time “reducing” anxiety, which is the opposite of the true +0.1 effect per unit time.
+
+**Conclusion:** When the correctly measured variable is available (here, true Stress), multiple regression can recover the true relationships. When only a proxy is available, even sophisticated-looking models can be confidently wrong. Always question proxies, inspect functional form, and validate against theory/ground truth when possible.
 
 ### Questions to Answer for 95% Grade on Challenge
 
-8. **Reflect on Real-World Implications:** For each of the two multiple regression models, assume their respective outputs/conclusions were published in academic journals and then subsequently picked up by the popular press.  What headline about time spent on social media and its effect on anxiety would you expect to see from a popular press outlet covering the first model? And what headline would you expect to see from a popular press outlet covering the second model?  Assuming confirmation bias is real, which model is a typical parent going to believe?  Which model will Facebook, Instagram, and TikTok executives prefer?
+## Question 8 — Real-World Headlines & Stakeholder Reactions
+
+**Model A (Proxy: Anxiety ~ StressSurvey + Time)**
+- Findings: βStressSurvey ≈ 1.43 (inflated), βTime ≈ -2.78 (sign-flipped), high R².
+- Likely Academic Abstract Spin: “Survey-measured stress strongly predicts anxiety; time online shows a negative association.”
+- Popular Press Headline: “More Social Media Time May LOWER Anxiety, Surprising Study Finds.”
+- Parent Reaction: Skeptical but some may welcome a narrative that screen time isn’t harmful (confirmation for parents who allow heavy usage).
+- Platform Executive Reaction: Enthusiastic—used defensively in PR to argue their products ‘may reduce anxiety’ when controlling for stress.
+
+**Model B (True: Anxiety ~ Stress + Time)**
+- Findings: βStress = 1.0, βTime = 0.1 (small positive), perfect fit to truth.
+- Popular Press Headline: “Study Confirms Social Media Slightly Raises Anxiety After Accounting for Stress.”
+- Parent Reaction: More alarming; reinforces pre-existing concerns about social media.
+- Platform Executive Reaction: Less favorable; downplays or challenges the ‘small but positive’ effect.
+
+**Confirmation Bias Dynamics:**
+Parents predisposed to worry about screen time will amplify Model B; tech companies and users preferring reassuring narratives will circulate Model A. Despite its *incorrect* causal interpretation, Model A’s dramatic (and counterintuitive) negative coefficient on Time has higher viral potential (“social media might help!”) and therefore greater misuse risk.
+
+**Core Message:** Spurious or proxy-driven coefficient flips can fuel misleading headlines, polarize stakeholders, and delay constructive policy discussions about genuine effects.
 
 ### Questions to Answer for 100% Grade on Challenge
 
-9. **Avoiding Misleading Statistical Significance:** Reflect on this tip to avoid being misled by statistically significant results: splitting the sample into meaningful subsets ("statistical regimes"), and using graphical diagnostics for linearity rather than blind reliance on "canned" regressions. Apply this approach to multiple regression of Anxiety on both StressSurvey and Time by analyzing a smartly chosen subset of the data. What specific subset did you choose and why?  Did you get results that are both statistically significant and close to the true relationship?
+## Question 9 — Subset (Statistical Regime) Analysis
+
+**Goal:** Show how focusing on a regime where the proxy is nearly a linear transformation of true Stress recovers near-true coefficients, mitigating proxy distortion.
+
+**Subset Chosen:** Observations with true Stress ≤ 2 (the low-stress regime). Here, Stress values are {0,1,2}; corresponding StressSurvey values are {0,3,6}. This regime exhibits a consistent linear mapping: StressSurvey = 3 × Stress (exact scaling), preserving proportionality.
+
+**Reason for Choice:** Within this restricted range the proxy distortion vanishes (pure linear scaling). Omitted-variable issues are minimized because survey increments reflect uniform steps in true Stress; Time variation is modest and additive.
+
+**Regression (Anxiety ~ StressSurvey + Time) on Subset (n=9):**
+
+| Term | Estimate | Expected (Transformed Truth) | p-value | Interpretation |
+|------|----------|------------------------------|---------|---------------|
+| Intercept | ~0.0 | 0 | 0.63 | Near zero; no systematic bias |
+| StressSurvey | 0.3333 | 1 / 3 (since Stress = StressSurvey / 3) | ~0 | Matches scaled true Stress effect |
+| Time | 0.1000 | 0.1 | ~0 | Matches true Time effect |
+
+Model fit: R² = 1.000 (design is perfectly consistent with structural equation in this subset).
+
+**Interpretation:** When the proxy is a simple linear scaling of the true variable (StressSurvey = 3 × Stress), the multiple regression correctly recovers scaled structural coefficients even with the proxy. This contrasts sharply with the full sample where non-linear jumps (e.g., Stress 2 → 8) break proportionality and flip the Time sign.
+
+**Diagnostic Insight:** Subsetting by regimes where linearity plausibly holds (low-stress consistent scaling) plus comparing coefficients to theoretical transformations provides a guardrail against misreading proxy-driven distortions. Graphical diagnostics (cluster spacing, stepwise jumps) would have alerted us to non-linearity outside the chosen subset.
+
+**Conclusion:** Strategic regime selection reveals when linear regression can be trusted with a proxy. The full-sample negative Time coefficient was an artifact; within a properly chosen regime, both coefficients align with the true causal structure, demonstrating the value of subset analysis for interpretability.
+
+```{python}
+#| echo: false
+#| include: true
+import statsmodels.api as sm
+import pandas as pd
+try:
+  observDF
+except NameError:
+  observDF = pd.DataFrame({
+    'Stress': [0,0,0,1,1,1,2,2,2,8,8,8,12,12,12],
+    'StressSurvey': [0,0,0,3,3,3,6,6,6,9,9,9,12,12,12],
+    'Time': [0,1,1,1,1,1,2,2,2,2,2,2.1,2.2,2.2,2.2],
+    'Anxiety': [0,0.1,0.1,1.1,1.1,1.1,2.2,2.2,2.2,8.2,8.2,8.21,12.22,12.22,12.22]
+  })
+subset = observDF[observDF['Stress'] <= 2].copy()
+X_sub = sm.add_constant(subset[['StressSurvey','Time']])
+model_q9 = sm.OLS(subset['Anxiety'], X_sub).fit()
+print(model_q9.summary())
+```
 
 ::: {.callout-tip}
 ## 🎯 For 100% Grade: Focus on What's Most Interesting
@@ -392,6 +773,7 @@ Let's start with a basic linear regression to understand the mechanics:
 #| label: simple-regression-python
 #| fig-cap: Python simple linear regression example
 #| echo: true
+#| eval: false
 
 import numpy as np
 import pandas as pd
@@ -436,6 +818,7 @@ Now let's see how multiple variables interact:
 #| label: multiple-regression-python
 #| fig-cap: Python multiple regression example
 #| echo: true
+#| eval: false
 
 import numpy as np
 import pandas as pd
